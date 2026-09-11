@@ -136,7 +136,8 @@ class CtrlRobot(EvApp):
     def _transmettre_position(self):
         x = round(self.x, 4)
         y = round(self.y, 4)
-        angle_degres = round(math.degrees(self.angle), 4)
+        angle_degres = round(math.degrees(self.angle), 4) % 360
+
         try:
             self._envoyer(
                 "127.0.0.1",
@@ -168,7 +169,7 @@ class CtrlRobot(EvApp):
             f"droit={transitions_droite} sens={sens_droit:+d} "
             f"signal={signal_droit} | "
             f"x={self.x:.2f} cm y={self.y:.2f} cm "
-            f"angle={math.degrees(self.angle):.2f} deg"
+            f"angle={math.degrees(self.angle) % 360:.2f} deg"
         )
         self._dernier_affichage = maintenant
 
