@@ -59,3 +59,8 @@ class Robot:
         self.arreter()
         self._moteur_gauche.fermer()
         self._moteur_droit.fermer()
+
+    def distance(self):
+        distance_gauche = self._moteur_gauche.traqueur.distance()
+        distance_droite = self._moteur_droit.traqueur.distance()
+        return distance_gauche, distance_droite

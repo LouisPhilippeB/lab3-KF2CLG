@@ -10,7 +10,6 @@ from moteur import Moteur
 from param import (
     APP_CTRL_ROBOT,
     APP_LIGNE,
-    DISTANCE_PAR_TRANSITION_CM,
     ENCODEUR_DROIT_GPIO,
     ENCODEUR_GAUCHE_GPIO,
     INTERVALLE_AFFICHAGE_ENCODEURS,
@@ -33,53 +32,35 @@ from param import (
     VITESSE_MIN,
 )
 from robot import Robot
+from traqueurDistance import TraqueurDistance
 
 
 class CtrlRobot(EvApp):
-    TMO = INTERVALLE_ODOMETRIE
-
     def __init__(
         self,
         port_no,
         robot,
-        encodeur_gauche,
-        encodeur_droit,
         envoyer=gen_ev_externe,
         horloge=time.perf_counter,
         **app_options,
     ):
-        app_options.setdefault("tmo", self.TMO)
-        super().__init__(port_no, **app_options)
+        super().__init__(port_no, **app_options, tmo=INTERVALLE_ODOMETRIE)
         self.robot = robot
-        self.encodeur_gauche = encodeur_gauche
-        self.encodeur_droit = encodeur_droit
         self._envoyer = envoyer
         self._horloge = horloge
-        self._verrou_compteurs = threading.Lock()
 
         self.x = 0.0
         self.y = 0.0
         self.angle = 0.0
-        self._compteur_gauche = 0
-        self._compteur_droit = 0
-        self._transitions_gauche = 0
-        self._transitions_droite = 0
-        self._sens_gauche = 0
-        self._sens_droit = 0
         self._dernier_calcul = self._horloge()
         self._dernier_affichage = self._dernier_calcul
 
         self._actions = {
-            MSG_AVANCER: (self.robot.avancer, 1, 1),
-            MSG_RECULER: (self.robot.reculer, -1, -1),
-            MSG_PIVOTER_G: (self.robot.pivoter_gauche, -1, 1),
-            MSG_PIVOTER_D: (self.robot.pivoter_droite, 1, -1),
+            MSG_AVANCER: self.robot.avancer,
+            MSG_RECULER: self.robot.reculer,
+            MSG_PIVOTER_G: self.robot.pivoter_gauche,
+            MSG_PIVOTER_D: self.robot.pivoter_droite,
         }
-
-        self.encodeur_gauche.when_activated = self._transition_gauche
-        self.encodeur_gauche.when_deactivated = self._transition_gauche
-        self.encodeur_droit.when_activated = self._transition_droite
-        self.encodeur_droit.when_deactivated = self._transition_droite
 
     @staticmethod
     def lire_vitesse(evenement):
@@ -89,49 +70,21 @@ class CtrlRobot(EvApp):
         vitesse = float(donnees[0])
         return max(VITESSE_MIN, min(VITESSE_MAX, vitesse))
 
-    def _transition_gauche(self, _encodeur=None):
-        with self._verrou_compteurs:
-            self._transitions_gauche += 1
-            self._compteur_gauche += self._sens_gauche
-
-    def _transition_droite(self, _encodeur=None):
-        with self._verrou_compteurs:
-            self._transitions_droite += 1
-            self._compteur_droit += self._sens_droit
-
     def _definir_sens(self, sens_gauche, sens_droit):
-        with self._verrou_compteurs:
             self._sens_gauche = sens_gauche
             self._sens_droit = sens_droit
 
     def initialiser_odometrie(self):
         """Arrete le robot et remet les compteurs et la pose a zero."""
         self.robot.arreter()
-        with self._verrou_compteurs:
-            self._compteur_gauche = 0
-            self._compteur_droit = 0
-            self._transitions_gauche = 0
-            self._transitions_droite = 0
-            self._sens_gauche = 0
-            self._sens_droit = 0
+        self.robot.distance() # trigger counter reset in distance tracker
 
         self.x = 0.0
         self.y = 0.0
         self.angle = 0.0
         self._dernier_calcul = self._horloge()
-        self._dernier_affichage = self._dernier_calcul
+
         self._transmettre_position()
-
-    def _lire_deplacements_roues(self):
-        with self._verrou_compteurs:
-            transitions_gauche = self._compteur_gauche
-            transitions_droite = self._compteur_droit
-            self._compteur_gauche = 0
-            self._compteur_droit = 0
-
-        distance_gauche = transitions_gauche * DISTANCE_PAR_TRANSITION_CM
-        distance_droite = transitions_droite * DISTANCE_PAR_TRANSITION_CM
-        return distance_gauche, distance_droite
 
     def _transmettre_position(self):
         x = round(self.x, 4)
@@ -154,32 +107,20 @@ class CtrlRobot(EvApp):
         if maintenant - self._dernier_affichage < INTERVALLE_AFFICHAGE_ENCODEURS:
             return
 
-        with self._verrou_compteurs:
-            transitions_gauche = self._transitions_gauche
-            transitions_droite = self._transitions_droite
-            sens_gauche = self._sens_gauche
-            sens_droit = self._sens_droit
-
-        signal_gauche = int(self.encodeur_gauche.value)
-        signal_droit = int(self.encodeur_droit.value)
+        self._dernier_affichage = maintenant
         print(
-            "ENCODEURS | "
-            f"gauche={transitions_gauche} sens={sens_gauche:+d} "
-            f"signal={signal_gauche} | "
-            f"droit={transitions_droite} sens={sens_droit:+d} "
-            f"signal={signal_droit} | "
+            "POSITION | "
             f"x={self.x:.2f} cm y={self.y:.2f} cm "
             f"angle={math.degrees(self.angle) % 360:.2f} deg"
         )
-        self._dernier_affichage = maintenant
 
-    def actualiser_odometrie(self, maintenant=None):
-        maintenant = self._horloge() if maintenant is None else maintenant
+    def actualiser_odometrie(self):
+        maintenant = self._horloge()
         duree = maintenant - self._dernier_calcul
         if duree < INTERVALLE_ODOMETRIE:
             return False
 
-        distance_gauche, distance_droite = self._lire_deplacements_roues()
+        distance_gauche, distance_droite = self.robot.distance()
         distance = (distance_droite + distance_gauche) / 2.0
         variation_angle = (
             distance_droite - distance_gauche
@@ -210,18 +151,15 @@ class CtrlRobot(EvApp):
             print(f"Message inconnu ignore: {evenement.type}")
             return
 
-        mouvement, sens_gauche, sens_droit = action
         try:
             vitesse = self.lire_vitesse(evenement)
-            mouvement(vitesse)
-            self._definir_sens(sens_gauche, sens_droit)
+            action(vitesse)
             print(
                 f"Commande recue: type={evenement.type}, "
                 f"vitesse={vitesse:.2f}."
             )
         except ValueError as erreur:
             self.robot.arreter()
-            self._definir_sens(0, 0)
             print(f"Commande invalide, robot arrete: {erreur}")
 
     def dispatch_event(self, evenement):
@@ -230,11 +168,7 @@ class CtrlRobot(EvApp):
         self.actualiser_odometrie()
 
     def quitter(self):
-        try:
-            self.robot.fermer()
-        finally:
-            self.encodeur_gauche.close()
-            self.encodeur_droit.close()
+        self.robot.fermer()
         print("Controleur arrete; moteurs et encodeurs desactives.")
 
 
@@ -250,31 +184,26 @@ def creer_controleur(port_no=APP_CTRL_ROBOT):
             "gpiozero est necessaire: "
         ) from erreur
 
+    traqueur_gauche = TraqueurDistance(
+            DigitalInputDevice(ENCODEUR_GAUCHE_GPIO)
+    )
+    traqueur_droit = TraqueurDistance(
+            DigitalInputDevice(ENCODEUR_DROIT_GPIO)
+    )
     moteur_gauche = Moteur(
         PWMOutputDevice(MOTEUR_GAUCHE_PWM),
         DigitalOutputDevice(MOTEUR_GAUCHE_IN1),
         DigitalOutputDevice(MOTEUR_GAUCHE_IN2),
+        traqueur_gauche
     )
     moteur_droit = Moteur(
         PWMOutputDevice(MOTEUR_DROIT_PWM),
         DigitalOutputDevice(MOTEUR_DROIT_IN1),
         DigitalOutputDevice(MOTEUR_DROIT_IN2),
+        traqueur_droit
     )
     robot = Robot(moteur_gauche, moteur_droit)
-    encodeur_gauche = DigitalInputDevice(
-        ENCODEUR_GAUCHE_GPIO,
-        pull_up=False,
-    )
-    encodeur_droit = DigitalInputDevice(
-        ENCODEUR_DROIT_GPIO,
-        pull_up=False,
-    )
-    return CtrlRobot(
-        port_no,
-        robot,
-        encodeur_gauche,
-        encodeur_droit,
-    )
+    return CtrlRobot(port_no, robot)
 
 
 def main():
