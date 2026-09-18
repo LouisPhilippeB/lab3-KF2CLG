@@ -1,3 +1,5 @@
+#!/bin/python3
+
 """Telecommande clavier du robot."""
 
 import sys

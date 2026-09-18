@@ -1,3 +1,5 @@
+#!/bin/python3
+
 """Arret lorsque le robot est a un metre du debut de la ligne."""
 
 import math
