@@ -1,4 +1,5 @@
 from param import DISTANCE_PAR_TRANSITION_CM
+from moteur import Moteur
 
 class EtatMoteur:
     AVANT = 1
@@ -30,3 +31,24 @@ class TraqueurDistance:
     def fermer(self):
         self.reinit()
         self.__enc_rot.close()
+
+class MoteurTraque(Moteur):
+    def __init__(self, pwm, pin_avant, pin_arriere, traqueur):
+        self.traqueur = traqueur
+        super().__init__(pwm, pin_avant, pin_arriere)
+
+    def avancer(self, puissance):
+        super().avancer(puissance)
+        self.traqueur.etat_moteur(EtatMoteur.AVANT)
+
+    def reculer(self, puissance):
+        super().reculer(puissance)
+        self.traqueur.etat_moteur(EtatMoteur.ARRIERE)
+
+    def arreter(self):
+        super().arreter()
+        self.traqueur.etat_moteur(EtatMoteur.ARRET)
+
+    def fermer(self):
+        super().fermer()
+        self.traqueur.fermer()

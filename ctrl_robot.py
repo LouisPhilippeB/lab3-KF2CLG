@@ -32,7 +32,7 @@ from param import (
     VITESSE_MIN,
 )
 from robot import Robot
-from traqueurDistance import TraqueurDistance
+from traqueurDistance import TraqueurDistance, MoteurTraque as Moteur
 
 
 class CtrlRobot(EvApp):
