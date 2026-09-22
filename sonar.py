@@ -54,6 +54,7 @@ class Sonar:
         entree_factory=None,
         signaleur=None,
         grandeur_fenetre=FENETRE_LISSAGE_SONAR,
+        identifiant=None,
     ):
         if sortie_factory is None or entree_factory is None:
             entree_gpiozero, sortie_gpiozero = _charger_gpiozero()
@@ -113,15 +114,11 @@ class Sonar:
             self._periode_signaleur = periode
 
     def _transmettre_obstacle(self, distance):
-        if distance >= SEUIL_SONAR_MESSAGE_CM:
-            return
         try:
-            self._envoyer(
-                "127.0.0.1",
-                APP_LIGNE,
-                MSG_SONAR,
-                round(distance, 2),
-            )
+            donnees = [round(distance, 2)]
+            if self._identifiant is not None:
+                donnees.append(self._identifiant)
+            self._envoyer("127.0.0.1", APP_LIGNE, MSG_SONAR, *donnees)
         except OSError as erreur:
             print(f"MSG_SONAR non transmis a ligne.py: {erreur}")
 
@@ -155,11 +152,13 @@ def main():
         SONAR_GAUCHE_TRIGGER_GPIO,
         SONAR_GAUCHE_ECHO_GPIO,
         DEL_JAUNE_GPIO,
+        identifiant="gauche",
     )
     sonar_droit = Sonar(
         SONAR_DROIT_TRIGGER_GPIO,
         SONAR_DROIT_ECHO_GPIO,
         DEL_VERTE_GPIO,
+        identifiant="droit",
     )
 
     print("Sonars actifs a 10 mesures par seconde chacun.")
