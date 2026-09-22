@@ -38,13 +38,14 @@ class Ligne(EvApp):
         self._attend_position_initiale = True
         self._arrete_par_sonar = False
         self._distance_max_atteinte = False
+        self._distances_sonars = {}
 
         self._demander_initialisation()
 
     @staticmethod
-    def lire_distance_sonar(evenement):
+    def lire_mesure_sonar(evenement):
         donnees = evenement.split()
-        if len(donnees) != 1 or donnees[0] == "":
+        if len(donnees) not in (1, 2) or donnees[0] == "":
             raise ValueError("MSG_SONAR doit contenir une distance")
 
         try:
@@ -56,6 +57,15 @@ class Ligne(EvApp):
 
         if not math.isfinite(distance) or distance < 0:
             raise ValueError("MSG_SONAR contient une distance invalide")
+
+        identifiant = donnees[1].strip() if len(donnees) == 2 else "sonar"
+        if not identifiant:
+            raise ValueError("MSG_SONAR contient un identifiant vide")
+        return distance, identifiant
+
+    @staticmethod
+    def lire_distance_sonar(evenement):
+        distance, _identifiant = Ligne.lire_mesure_sonar(evenement)
         return distance
 
     def _envoyer_controleur(self, type_message, *donnees):
@@ -126,29 +136,35 @@ class Ligne(EvApp):
 
     def _traiter_sonar(self, evenement):
         try:
-            distance = self.lire_distance_sonar(evenement)
+            distance, identifiant = self.lire_mesure_sonar(evenement)
         except ValueError as erreur:
             print(f"MSG_SONAR invalide ignore: {erreur}")
             return
 
-        if distance < SEUIL_SONAR_ARRET_CM:
-            if not self._arrete_par_sonar:
-                if self._envoyer_controleur(MSG_ARRETER):
+        self._distances_sonars[identifiant] = distance
+        distance_minimale = min(self._distances_sonars.values())
+
+        if distance_minimale < SEUIL_SONAR_ARRET_CM:
+            deja_arrete = self._arrete_par_sonar
+            if self._envoyer_controleur(MSG_ARRETER):
+                if not deja_arrete:
                     self._arrete_par_sonar = True
                     self._afficher(
-                        f"Obstacle a {distance:.2f} cm: robot arrete."
+                        f"Obstacle a {distance_minimale:.2f} cm: "
+                        "robot arrete."
                     )
             return
 
         if (
-            distance > SEUIL_SONAR_RAPIDE_CM
+            distance_minimale > SEUIL_SONAR_RAPIDE_CM
             and self._arrete_par_sonar
             and not self._distance_max_atteinte
         ):
             if self._envoyer_controleur(MSG_AVANCER, VITESSE_INITIALE):
                 self._arrete_par_sonar = False
                 self._afficher(
-                    f"Obstacle eloigne a {distance:.2f} cm: robot redemarre."
+                    f"Zone degagee ({distance_minimale:.2f} cm): "
+                    "robot redemarre."
                 )
 
     def dispatch_event(self, evenement):
