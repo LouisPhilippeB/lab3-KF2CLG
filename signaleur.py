@@ -9,23 +9,26 @@ class Signaleur:
 
     @staticmethod
     def __thr_signaleur(quit, led, timeout):
-        while not quit.is_set():
-            led.on()
+        timeout = timeout / 2.0
+        try:
+            while not quit.is_set():
+                led.toggle()
             quit.wait(timeout)
+        finally:
             led.off()
 
     def demarrer(self):
-        self.__quit.set()
-        self.__quit = Event()
+        self.arreter()
 
-        thread = Thread(
+        self.thread = Thread(
             target=lambda: self.__thr_signaleur(self.__quit, self.led, self.__timeout),
             daemon=True
         )
-        thread.start()
+        self.thread.start()
 
     def arreter(self):
         self.__quit.set()
+        self.thread.join()
 
     def clignoter(self, timeout):
         if (timeout < 0.05):

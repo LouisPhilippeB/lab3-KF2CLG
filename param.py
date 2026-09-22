@@ -1,7 +1,7 @@
 """Constantes au client et au controleur du robot."""
 
 APP_CTRL_ROBOT = 8000
-IP_CTRL_ROBOT = "172.31.6.189"
+IP_CTRL_ROBOT = "10.185.55.100"
 
 APP_LIGNE = 8002
 

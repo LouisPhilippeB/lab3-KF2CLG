@@ -25,6 +25,10 @@ class Lisseur:
         return self.__lisser(values)
 
     def add(self, v):
+        v = float(v)
+        if not math.isfinite(v):
+            raise ValueError("La valeur a lisser doit etre finie")
+
         self.recorded[self.__id % len(self.recorded)] = v
         self.__id += 1
 

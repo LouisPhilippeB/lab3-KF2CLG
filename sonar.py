@@ -1,9 +1,13 @@
+#!/bin/python3
+
 """Mesure des deux sonars et signalisation par DEL."""
 
 import math
 import threading
 import time
 
+from signaleur import Signaleur
+from lisseur import Lisseur
 from ev_app_client_api import fermer_client, gen_ev_externe
 from param import (
     APP_LIGNE,
@@ -34,131 +38,6 @@ def _charger_gpiozero():
     except ImportError as erreur:
         raise SystemExit("gpiozero est necessaire sur le Pi") from erreur
     return DigitalInputDevice, DigitalOutputDevice
-
-
-class Signaleur:
-
-    def __init__(self, gpio_del, sortie_factory=None):
-        if sortie_factory is None:
-            _, sortie_factory = _charger_gpiozero()
-
-        self._del = sortie_factory(gpio_del)
-        self._periode = PERIODE_DEL_LENTE_S
-        self._arret = None
-        self._fil = None
-        self._ferme = False
-        self._verrou_operation = threading.Lock()
-
-    @property
-    def periode(self):
-        return self._periode
-
-    def _executer(self, arret, periode):
-        demi_periode = periode / 2.0
-        try:
-            while not arret.is_set():
-                self._del.on()
-                if arret.wait(demi_periode):
-                    break
-                self._del.off()
-                if arret.wait(demi_periode):
-                    break
-        finally:
-            self._del.off()
-
-    def _arreter_fil(self):
-        arret = self._arret
-        fil = self._fil
-        self._arret = None
-        self._fil = None
-
-        if arret is not None:
-            arret.set()
-        if fil is not None and fil is not threading.current_thread():
-            fil.join()
-        self._del.off()
-
-    def demarrer(self):
-        with self._verrou_operation:
-            if self._ferme:
-                raise RuntimeError("Le signaleur est ferme")
-            if self._fil is not None and self._fil.is_alive():
-                return
-
-            self._arret = threading.Event()
-            self._fil = threading.Thread(
-                target=self._executer,
-                args=(self._arret, self._periode),
-                name="signaleur-del",
-                daemon=True,
-            )
-            self._fil.start()
-
-    def arreter(self):
-        with self._verrou_operation:
-            self._arreter_fil()
-
-    def clignoter(self, periode):
-        periode = float(periode)
-        if not math.isfinite(periode):
-            raise ValueError("La periode de clignotement doit etre finie")
-        periode = max(PERIODE_DEL_MIN_S, periode)
-
-        with self._verrou_operation:
-            if self._ferme:
-                raise RuntimeError("Le signaleur est fermer")
-            self._arreter_fil()
-            self._periode = periode
-            self._arret = threading.Event()
-            self._fil = threading.Thread(
-                target=self._executer,
-                args=(self._arret, self._periode),
-                name="signaleur-del",
-                daemon=True,
-            )
-            self._fil.start()
-
-    def fermer(self):
-        with self._verrou_operation:
-            if self._ferme:
-                return
-            self._arreter_fil()
-            self._del.close()
-            self._ferme = True
-
-
-class Lisseur:
-
-    def __init__(self, grandeur_fenetre):
-        grandeur_fenetre = int(grandeur_fenetre)
-        if grandeur_fenetre <= 0:
-            raise ValueError("La grandeur de la fenetre doit etre positive")
-
-        self.grandeur_fenetre = grandeur_fenetre
-        self._valeurs = []
-        self._verrou = threading.Lock()
-
-    def _ajouter(self, valeur):
-        valeur = float(valeur)
-        if not math.isfinite(valeur):
-            raise ValueError("La valeur a lisser doit etre finie")
-        self._valeurs.append(valeur)
-        if len(self._valeurs) > self.grandeur_fenetre:
-            del self._valeurs[0]
-        return list(self._valeurs)
-
-    def lisser(self, valeur):
-        with self._verrou:
-            valeurs = self._ajouter(valeur)
-            return sum(valeurs) / len(valeurs)
-
-    def lisser_min_max(self, valeur):
-        with self._verrou:
-            valeurs = self._ajouter(valeur)
-            if len(valeurs) >= 3:
-                valeurs.remove(min(valeurs))
-                valeurs.remove(max(valeurs))
-            return sum(valeurs) / len(valeurs)
 
 
 class Sonar:
@@ -232,6 +111,7 @@ class Sonar:
             periode = PERIODE_DEL_LENTE_S
 
         if periode != self._periode_signaleur:
+            print(f"clignoter: {periode}")
             self._signaleur.clignoter(periode)
             self._periode_signaleur = periode
 
@@ -268,11 +148,7 @@ class Sonar:
             self._debut_echo = None
 
         try:
-            fermer = getattr(self._signaleur, "fermer", None)
-            if fermer is not None:
-                fermer()
-            else:
-                self._signaleur.arreter()
+            self._signaleur.arreter()
         finally:
             self._trigger.off()
             self._trigger.close()
