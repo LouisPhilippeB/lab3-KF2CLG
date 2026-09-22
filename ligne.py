@@ -11,8 +11,14 @@ from param import (
     APP_LIGNE,
     DISTANCE_LIGNE_CM,
     DISTANCE_PAR_TRANSITION_CM,
+    MSG_ARRETER,
+    MSG_AVANCER,
     MSG_INIT,
     MSG_POSITION,
+    MSG_SONAR,
+    SEUIL_SONAR_ARRET_CM,
+    SEUIL_SONAR_RAPIDE_CM,
+    VITESSE_INITIALE,
 )
 
 
@@ -30,8 +36,40 @@ class Ligne(EvApp):
         self.distance_parcourue = 0.0
         self._point_initial = None
         self._attend_position_initiale = True
+        self._arrete_par_sonar = False
+        self._distance_max_atteinte = False
 
         self._demander_initialisation()
+
+    @staticmethod
+    def lire_distance_sonar(evenement):
+        donnees = evenement.split()
+        if len(donnees) != 1 or donnees[0] == "":
+            raise ValueError("MSG_SONAR doit contenir une distance")
+
+        try:
+            distance = float(donnees[0])
+        except (TypeError, ValueError) as erreur:
+            raise ValueError(
+                "MSG_SONAR ne contient pas un nombre"
+            ) from erreur
+
+        if not math.isfinite(distance) or distance < 0:
+            raise ValueError("MSG_SONAR contient une distance invalide")
+        return distance
+
+    def _envoyer_controleur(self, type_message, *donnees):
+        try:
+            self._envoyer(
+                "127.0.0.1",
+                APP_CTRL_ROBOT,
+                type_message,
+                *donnees,
+            )
+            return True
+        except OSError as erreur:
+            print(f"Message non transmis au robot: {erreur}")
+            return False
 
     @staticmethod
     def lire_position(evenement):
@@ -56,14 +94,7 @@ class Ligne(EvApp):
         self.distance_parcourue = 0.0
         self._point_initial = None
         self._attend_position_initiale = True
-        try:
-            self._envoyer(
-                "127.0.0.1",
-                APP_CTRL_ROBOT,
-                MSG_INIT,
-            )
-        except OSError as erreur:
-            print(f"MSG_INIT n'est pas transmis au robot: {erreur}")
+        self._envoyer_controleur(MSG_INIT)
 
     def _accepter_position_initiale(self, x, y):
         distance_origine = math.hypot(x, y)
@@ -89,10 +120,42 @@ class Ligne(EvApp):
             f"Distance atteinte: {self.distance_parcourue:.2f} cm. "
             "Robot arrete et odometrie reinitialisee."
         )
+        self._distance_max_atteinte = True
+        self._arrete_par_sonar = False
         self._demander_initialisation()
+
+    def _traiter_sonar(self, evenement):
+        try:
+            distance = self.lire_distance_sonar(evenement)
+        except ValueError as erreur:
+            print(f"MSG_SONAR invalide ignore: {erreur}")
+            return
+
+        if distance < SEUIL_SONAR_ARRET_CM:
+            if not self._arrete_par_sonar:
+                if self._envoyer_controleur(MSG_ARRETER):
+                    self._arrete_par_sonar = True
+                    self._afficher(
+                        f"Obstacle a {distance:.2f} cm: robot arrete."
+                    )
+            return
+
+        if (
+            distance > SEUIL_SONAR_RAPIDE_CM
+            and self._arrete_par_sonar
+            and not self._distance_max_atteinte
+        ):
+            if self._envoyer_controleur(MSG_AVANCER, VITESSE_INITIALE):
+                self._arrete_par_sonar = False
+                self._afficher(
+                    f"Obstacle eloigne a {distance:.2f} cm: robot redemarre."
+                )
 
     def dispatch_event(self, evenement):
         if evenement is None:
+            return
+        if evenement.type == MSG_SONAR:
+            self._traiter_sonar(evenement)
             return
         if evenement.type != MSG_POSITION:
             print(f"Message inconnu ignore: {evenement.type}")
