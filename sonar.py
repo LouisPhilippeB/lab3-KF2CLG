@@ -70,7 +70,6 @@ class Sonar:
         self._envoyer = envoyer
         self._horloge = horloge
         self._dormir = dormir
-        self._verrou_mesure = threading.Lock()
         self._debut_echo = None
         self._periode_signaleur = None
         self._arrete = False
@@ -81,17 +80,15 @@ class Sonar:
         self._echo.when_deactivated = self._front_descendant
 
     def _front_montant(self, _entree=None):
-        with self._verrou_mesure:
-            if not self._arrete:
-                self._debut_echo = self._horloge()
+        if not self._arrete:
+            self._debut_echo = self._horloge()
 
     def _front_descendant(self, _entree=None):
         fin_echo = self._horloge()
-        with self._verrou_mesure:
-            if self._arrete or self._debut_echo is None:
-                return
-            duree = fin_echo - self._debut_echo
-            self._debut_echo = None
+        if self._arrete or self._debut_echo is None:
+            return
+        duree = fin_echo - self._debut_echo
+        self._debut_echo = None
 
         distance = VITESSE_SON_CM_S * duree / 2.0
         if not DISTANCE_SONAR_MIN_CM <= distance <= DISTANCE_SONAR_MAX_CM:
@@ -129,10 +126,9 @@ class Sonar:
             print(f"MSG_SONAR non transmis a ligne.py: {erreur}")
 
     def mesurer(self):
-        with self._verrou_mesure:
-            if self._arrete:
-                return
-            self._debut_echo = None
+        if self._arrete:
+            return
+        self._debut_echo = None
 
         self._trigger.on()
         try:
@@ -141,11 +137,10 @@ class Sonar:
             self._trigger.off()
 
     def arreter(self):
-        with self._verrou_mesure:
-            if self._arrete:
-                return
-            self._arrete = True
-            self._debut_echo = None
+        if self._arrete:
+            return
+        self._arrete = True
+        self._debut_echo = None
 
         try:
             self._signaleur.arreter()
