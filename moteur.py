@@ -1,6 +1,9 @@
 """Modele du moteur du robot mobile."""
 
+import math
+
 from param import PWM_MAX, PWM_MIN
+
 
 class Moteur:
     def __init__(self, pwm, pin_avant, pin_arriere):
@@ -12,6 +15,8 @@ class Moteur:
     @staticmethod
     def limiter_puissance(puissance):
         puissance = float(puissance)
+        if not math.isfinite(puissance):
+            raise ValueError("La puissance doit etre un nombre fini")
         return max(PWM_MIN, min(PWM_MAX, puissance))
 
     def avancer(self, puissance):
