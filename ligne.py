@@ -160,7 +160,7 @@ class Ligne(EvApp):
             and self._arrete_par_sonar
             and not self._distance_max_atteinte
         ):
-            if self._envoyer_controleur(MSG_AVANCER, VITESSE_INITIALE):
+            if self._envoyer_controleur(MSG_AVANCER):
                 self._arrete_par_sonar = False
                 self._afficher(
                     f"Zone degagee ({distance_minimale:.2f} cm): "

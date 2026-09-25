@@ -30,6 +30,7 @@ from param import (
     MSG_PIVOTER_G,
     MSG_POSITION,
     MSG_RECULER,
+    MSG_VITESSE,
     VITESSE_MAX,
     VITESSE_MIN,
 )
@@ -58,6 +59,8 @@ class CtrlRobot(EvApp):
         self._dernier_affichage = self._dernier_calcul
 
         self._actions = {
+            MSG_INIT: self.initialiser_odometrie,
+            MSG_ARRETER: self.robot.arreter,
             MSG_AVANCER: self.robot.avancer,
             MSG_RECULER: self.robot.reculer,
             MSG_PIVOTER_G: self.robot.pivoter_gauche,
@@ -137,15 +140,10 @@ class CtrlRobot(EvApp):
         return True
 
     def _traiter_commande(self, evenement):
-        if evenement.type == MSG_INIT:
-            self.initialiser_odometrie()
-            print("MSG_INIT recu: odometrie remise a zero.")
-            return
-
-        if evenement.type == MSG_ARRETER:
-            self.robot.arreter()
-            self._definir_sens(0, 0)
-            print("MSG_ARRETER recu.")
+        if evenement.type == MSG_VITESSE:
+            v = self.lire_vitesse(evenement)
+            self.robot.vitesse = v
+            print(f"MSG_VITESSE recu. {v}")
             return
 
         action = self._actions.get(evenement.type)
@@ -154,11 +152,10 @@ class CtrlRobot(EvApp):
             return
 
         try:
-            vitesse = self.lire_vitesse(evenement)
-            action(vitesse)
+            action()
             print(
                 f"Commande recue: type={evenement.type}, "
-                f"vitesse={vitesse:.2f}."
+                f"vitesse={self.robot.vitesse:.2f}."
             )
         except ValueError as erreur:
             self.robot.arreter()

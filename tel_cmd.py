@@ -13,6 +13,7 @@ from param import (
     MSG_PIVOTER_D,
     MSG_PIVOTER_G,
     MSG_RECULER,
+    MSG_VITESSE,
     PAS_VITESSE,
     VITESSE_INITIALE,
     VITESSE_MAX,
@@ -42,7 +43,7 @@ class TelCmd:
     def __init__(self, ip_robot, envoyer=gen_ev_externe):
         self.ip_robot = ip_robot
         self.vitesse = VITESSE_INITIALE
-        self.derniere_commande = None
+        self.derniere_commande = MSG_ARRETER
         self._envoyer = envoyer
 
     def envoyer_mouvement(self, type_message):
@@ -50,13 +51,11 @@ class TelCmd:
             self.ip_robot,
             APP_CTRL_ROBOT,
             type_message,
-            self.vitesse,
         )
         self.derniere_commande = type_message
 
     def arreter(self):
-        self._envoyer(self.ip_robot, APP_CTRL_ROBOT, MSG_ARRETER)
-        self.derniere_commande = None
+        self.envoyer_mouvement(MSG_ARRETER)
 
     def modifier_vitesse(self, variation):
         nouvelle_vitesse = self.vitesse + variation
@@ -65,8 +64,7 @@ class TelCmd:
             2,
         )
         print(f"Vitesse: {self.vitesse:.2f} m/s")
-        if self.derniere_commande is not None:
-            self.envoyer_mouvement(self.derniere_commande)
+        self._envoyer(self.ip_robot, APP_CTRL_ROBOT, MSG_VITESSE, self.vitesse)
 
     def traiter_touche(self, touche):
         if touche == -1:
@@ -150,7 +148,7 @@ def afficher_commandes(telecommande, cv2, np):
             cv2.LINE_AA,
         )
 
-    etat = NOMS_COMMANDES.get(telecommande.derniere_commande, "ARRETE")
+    etat = NOMS_COMMANDES.get(telecommande.derniere_commande)
     cv2.rectangle(image, (35, 365), (525, 415), (65, 65, 65), -1)
     cv2.putText(
         image,
