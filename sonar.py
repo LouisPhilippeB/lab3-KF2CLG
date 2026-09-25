@@ -240,8 +240,6 @@ class Sonar:
         self.derniere_distance = distance_lissee
         self._actualiser_signaleur(distance_lissee)
 
-        # A l'approche, la mesure brute reagit plus vite que la moyenne.
-        # A l'eloignement, la moyenne basse retarde prudemment la reprise.
         distance_securite = min(distance_brute, distance_lissee)
         self._transmettre_obstacle(distance_securite)
 

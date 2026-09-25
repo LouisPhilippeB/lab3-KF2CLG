@@ -78,14 +78,12 @@ class Robot:
         return True
 
     def bloquer(self):
-        """Interdit l'avance tout en permettant recul et pivotements."""
         if self._bloque:
             return
         self._bloque = True
         self.arreter()
 
     def debloquer(self):
-        """Autorise de nouveau l'avance sans demarrer les moteurs."""
         self._bloque = False
 
     def arreter(self):
