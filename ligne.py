@@ -16,6 +16,7 @@ from param import (
     MSG_INIT,
     MSG_POSITION,
     MSG_SONAR,
+    MSG_OBSTACLE,
     SEUIL_SONAR_ARRET_CM,
     SEUIL_SONAR_RAPIDE_CM,
     VITESSE_INITIALE,
@@ -36,7 +37,7 @@ class Ligne(EvApp):
         self.distance_parcourue = 0.0
         self._point_initial = None
         self._attend_position_initiale = True
-        self._arrete_par_sonar = False
+        self._obstacle = False
         self._distance_max_atteinte = False
         self._distances_sonars = {}
 
@@ -131,8 +132,22 @@ class Ligne(EvApp):
             "Robot arrete et odometrie reinitialisee."
         )
         self._distance_max_atteinte = True
-        self._arrete_par_sonar = False
         self._demander_initialisation()
+
+    def _envoyer_obstacle(self, obstacle, distance):
+        if self._obstacle != obstacle:
+            self._obstacle = obstacle
+            if self._envoyer_controleur(MSG_OBSTACLE, obstacle):
+                if obstacle:
+                    self._afficher(
+                        f"Obstacle a {distance:.2f} cm: "
+                        "robot bloqué."
+                    )
+                else:
+                    self._afficher(
+                        f"Zone degagée ({distance:.2f} cm): "
+                        "robot débloqué."
+                    )
 
     def _traiter_sonar(self, evenement):
         try:
@@ -143,29 +158,7 @@ class Ligne(EvApp):
 
         self._distances_sonars[identifiant] = distance
         distance_minimale = min(self._distances_sonars.values())
-
-        if distance_minimale < SEUIL_SONAR_ARRET_CM:
-            deja_arrete = self._arrete_par_sonar
-            if self._envoyer_controleur(MSG_ARRETER):
-                if not deja_arrete:
-                    self._arrete_par_sonar = True
-                    self._afficher(
-                        f"Obstacle a {distance_minimale:.2f} cm: "
-                        "robot arrete."
-                    )
-            return
-
-        if (
-            distance_minimale > SEUIL_SONAR_RAPIDE_CM
-            and self._arrete_par_sonar
-            and not self._distance_max_atteinte
-        ):
-            if self._envoyer_controleur(MSG_AVANCER):
-                self._arrete_par_sonar = False
-                self._afficher(
-                    f"Zone degagee ({distance_minimale:.2f} cm): "
-                    "robot redemarre."
-                )
+        self._envoyer_obstacle(distance_minimale < SEUIL_SONAR_ARRET_CM, distance_minimale)
 
     def dispatch_event(self, evenement):
         if evenement is None:

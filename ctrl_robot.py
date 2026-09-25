@@ -31,6 +31,7 @@ from param import (
     MSG_POSITION,
     MSG_RECULER,
     MSG_VITESSE,
+    MSG_OBSTACLE,
     VITESSE_MAX,
     VITESSE_MIN,
 )
@@ -52,16 +53,17 @@ class CtrlRobot(EvApp):
         self._envoyer = envoyer
         self._horloge = horloge
 
+        self.action = MSG_ARRETER
         self.x = 0.0
         self.y = 0.0
         self.angle = 0.0
         self._dernier_calcul = self._horloge()
         self._dernier_affichage = self._dernier_calcul
+        self.obstacle = False
 
         self._actions = {
-            MSG_INIT: self.initialiser_odometrie,
             MSG_ARRETER: self.robot.arreter,
-            MSG_AVANCER: self.robot.avancer,
+            MSG_AVANCER: self.avancer,
             MSG_RECULER: self.robot.reculer,
             MSG_PIVOTER_G: self.robot.pivoter_gauche,
             MSG_PIVOTER_D: self.robot.pivoter_droite,
@@ -74,6 +76,18 @@ class CtrlRobot(EvApp):
             raise ValueError("Vitesse manquante")
         vitesse = float(donnees[0])
         return max(VITESSE_MIN, min(VITESSE_MAX, vitesse))
+
+    @staticmethod
+    def lire_obstacle(evenement):
+        print(evenement)
+        donnees = evenement.split()
+        if not donnees or donnees[0] == "":
+            raise ValueError("Valeur manquante")
+        return donnees[0] == "True"
+
+    def avancer(self):
+        if not self.obstacle:
+            self.robot.avancer()
 
     def _definir_sens(self, sens_gauche, sens_droit):
             self._sens_gauche = sens_gauche
@@ -140,10 +154,25 @@ class CtrlRobot(EvApp):
         return True
 
     def _traiter_commande(self, evenement):
+        if evenement.type == MSG_OBSTACLE:
+            self.obstacle = self.lire_obstacle(evenement)
+            print(f"MSG_OBSTACLE recu. {self.obstacle}")
+
+            if self.action == MSG_AVANCER:
+                if self.obstacle:
+                    self.robot.arreter()
+                else:
+                    self.robot.avancer()
+            return
+
         if evenement.type == MSG_VITESSE:
-            v = self.lire_vitesse(evenement)
-            self.robot.vitesse = v
-            print(f"MSG_VITESSE recu. {v}")
+            self.robot.vitesse = self.lire_vitesse(evenement)
+            print(f"MSG_VITESSE recu. {self.robot.vitesse}")
+            return
+
+        if evenement.type == MSG_INIT:
+            self.initialiser_odometrie()
+            print(f"MSG_INIT recu.")
             return
 
         action = self._actions.get(evenement.type)
@@ -152,6 +181,7 @@ class CtrlRobot(EvApp):
             return
 
         try:
+            self.action = evenement.type
             action()
             print(
                 f"Commande recue: type={evenement.type}, "

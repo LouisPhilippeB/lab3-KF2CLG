@@ -25,6 +25,7 @@ LARGEUR_FENETRE = 560
 HAUTEUR_FENETRE = 430
 
 NOMS_COMMANDES = {
+    MSG_ARRETER: "ARRETER",
     MSG_AVANCER: "AVANCE",
     MSG_RECULER: "RECULE",
     MSG_PIVOTER_G: "PIVOTE A GAUCHE",
@@ -38,6 +39,7 @@ class TelCmd:
         ord("w"): MSG_AVANCER,
         ord("e"): MSG_PIVOTER_D,
         ord("s"): MSG_RECULER,
+        ord(" "): MSG_ARRETER,
     }
 
     def __init__(self, ip_robot, envoyer=gen_ev_externe):
@@ -76,8 +78,6 @@ class TelCmd:
         commande = self.COMMANDES_MOUVEMENT.get(touche)
         if commande is not None:
             self.envoyer_mouvement(commande)
-        elif touche == ord(" "):
-            self.arreter()
         elif touche == ord("."):
             self.modifier_vitesse(PAS_VITESSE)
         elif touche == ord(","):
