@@ -81,7 +81,7 @@ class Signaleur:
     def demarrer(self):
         with self._verrou_operation:
             if self._ferme:
-                raise RuntimeError("Le signaleur est ferme")
+                raise RuntimeError("Le signaleur est fermer")
             if self._fil is not None and self._fil.is_alive():
                 return
 
@@ -195,7 +195,9 @@ class Sonar:
         self._identifiant = identifiant
         self._verrou_mesure = threading.Lock()
         self._debut_echo = None
+        self._mesure_en_attente = False
         self._periode_signaleur = None
+        self._obstacle_signale = False
         self._arrete = False
         self.derniere_distance = None
 
@@ -205,21 +207,33 @@ class Sonar:
 
     def _front_montant(self, _entree=None):
         with self._verrou_mesure:
-            if not self._arrete:
+            if not self._arrete and self._mesure_en_attente:
                 self._debut_echo = self._horloge()
 
     def _front_descendant(self, _entree=None):
         fin_echo = self._horloge()
         with self._verrou_mesure:
-            if self._arrete or self._debut_echo is None:
+            if (
+                self._arrete
+                or not self._mesure_en_attente
+                or self._debut_echo is None
+            ):
                 return
             duree = fin_echo - self._debut_echo
             self._debut_echo = None
+            self._mesure_en_attente = False
 
         distance = VITESSE_SON_CM_S * duree / 2.0
-        if not DISTANCE_SONAR_MIN_CM <= distance <= DISTANCE_SONAR_MAX_CM:
+        if not math.isfinite(distance) or distance <= 0:
             return
 
+        distance = max(
+            DISTANCE_SONAR_MIN_CM,
+            min(DISTANCE_SONAR_MAX_CM, distance),
+        )
+        self._traiter_distance(distance)
+
+    def _traiter_distance(self, distance):
         distance = self._lisseur.lisser_min_max(distance)
         self.derniere_distance = distance
         self._actualiser_signaleur(distance)
@@ -238,11 +252,24 @@ class Sonar:
             self._periode_signaleur = periode
 
     def _transmettre_obstacle(self, distance):
+        obstacle_detecte = distance < SEUIL_SONAR_MESSAGE_CM
+
+        if not obstacle_detecte and not self._obstacle_signale:
+            return
+
         try:
             donnees = [round(distance, 2)]
             if self._identifiant is not None:
                 donnees.append(self._identifiant)
             self._envoyer("127.0.0.1", APP_LIGNE, MSG_SONAR, *donnees)
+
+            if obstacle_detecte and not self._obstacle_signale:
+                nom_sonar = self._identifiant or "sonar"
+                print(
+                    f"MSG_SONAR({distance:.2f}) transmis par "
+                    f"le sonar {nom_sonar}: obstacle sous 50 cm."
+                )
+            self._obstacle_signale = obstacle_detecte
         except OSError as erreur:
             print(f"MSG_SONAR non transmis a ligne.py: {erreur}")
 
@@ -250,7 +277,12 @@ class Sonar:
         with self._verrou_mesure:
             if self._arrete:
                 return
+            mesure_sans_echo = self._mesure_en_attente
+            self._mesure_en_attente = True
             self._debut_echo = None
+
+        if mesure_sans_echo:
+            self._traiter_distance(DISTANCE_SONAR_MAX_CM)
 
         self._trigger.on()
         try:
@@ -264,6 +296,7 @@ class Sonar:
                 return
             self._arrete = True
             self._debut_echo = None
+            self._mesure_en_attente = False
 
         try:
             fermer = getattr(self._signaleur, "fermer", None)
@@ -291,7 +324,7 @@ def main():
         identifiant="droit",
     )
 
-    print("Sonars actifs a 10 mesures par seconde chacun.")
+    print("Sonars actifs a 10 mesures par seconde.")
     try:
         while True:
             debut_cycle = time.perf_counter()
